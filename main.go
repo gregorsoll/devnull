@@ -18,6 +18,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/zipkin"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.10.0"
@@ -127,9 +128,14 @@ func NewRouter(hostname string) *http.ServeMux {
 
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// work begins
-		_, span := tr.Start(r.Context(), "foo", trace.WithSpanKind(trace.SpanKindServer))
-		defer span.End()
+		propagator := otel.GetTextMapPropagator()
 
+		// Note: The span context is stored under the "remoteContextKey"
+		ctx := propagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+
+		_, span := tr.Start(ctx, "foo", trace.WithSpanKind(trace.SpanKindServer))
+		defer span.End()
+		propagator.Inject(ctx, propagation.HeaderCarrier(r.Header))
 		var resp bytes.Buffer
 		resp.WriteString(fmt.Sprintf("Timestamp: %s\n", time.Now()))
 		resp.WriteString("---------\n")
