@@ -18,7 +18,6 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/zipkin"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.10.0"
@@ -119,6 +118,27 @@ func ParseFlags() (string, error) {
 	// Return the configuration path
 	return configPath, nil
 }
+func Tracing(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		traceID, _ := trace.TraceIDFromHex(r.Header["X-B3-Traceid"][0])
+		spanID, _ := trace.SpanIDFromHex(r.Header["X-B3-Spanid"][0])
+		var traceFlags trace.TraceFlags
+		if r.Header["X-B3-Sampled"][0] == "1" {
+			traceFlags = trace.FlagsSampled
+		}
+
+		spanContext := trace.NewSpanContext(trace.SpanContextConfig{
+			TraceID:    traceID,
+			SpanID:     spanID,
+			TraceFlags: traceFlags,
+		})
+
+		ctx := trace.ContextWithSpanContext(r.Context(), spanContext)
+
+		r = r.WithContext(ctx)
+		next.ServeHTTP(w, r)
+	})
+}
 
 // NewRouter generates the router used in the HTTP Server
 func NewRouter(hostname string) *http.ServeMux {
@@ -126,16 +146,10 @@ func NewRouter(hostname string) *http.ServeMux {
 	router := http.NewServeMux()
 	tr := otel.GetTracerProvider().Tracer("devnull")
 
-	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// work begins
-		propagator := otel.GetTextMapPropagator()
-
-		// Note: The span context is stored under the "remoteContextKey"
-		ctx := propagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-
-		_, span := tr.Start(ctx, "foo", trace.WithSpanKind(trace.SpanKindServer))
+	devnuller := func(w http.ResponseWriter, r *http.Request) {
+		ctx2, span := tr.Start(r.Context(), "foo", trace.WithSpanKind(trace.SpanKindServer))
 		defer span.End()
-		propagator.Inject(ctx, propagation.HeaderCarrier(r.Header))
+
 		var resp bytes.Buffer
 		resp.WriteString(fmt.Sprintf("Timestamp: %s\n", time.Now()))
 		resp.WriteString("---------\n")
@@ -147,6 +161,8 @@ func NewRouter(hostname string) *http.ServeMux {
 
 		keys := make([]string, 0, len(r.URL.Query()))
 
+		_, span2 := tr.Start(ctx2, "foo2", trace.WithSpanKind(trace.SpanKindServer))
+		defer span2.End()
 		for k := range r.URL.Query() {
 			keys = append(keys, k)
 		}
@@ -155,9 +171,6 @@ func NewRouter(hostname string) *http.ServeMux {
 			resp.WriteString(fmt.Sprintf("Query field %q, Value %q\n", v, r.URL.Query()[v]))
 		}
 
-		//		for k, v := range r.URL.Query() {
-		//			resp.WriteString(fmt.Sprintf("Query field %q, Value %q\n", k, v))
-		//		}
 		resp.WriteString("---------\n")
 
 		headers := make([]string, 0, len(r.Header))
@@ -169,15 +182,14 @@ func NewRouter(hostname string) *http.ServeMux {
 			resp.WriteString(fmt.Sprintf("Header field %q, Value %q\n", v, r.Header[v]))
 		}
 
-		//	for k, v := range r.Header {
-		//		resp.WriteString(fmt.Sprintf("Header field %q, Value %q\n", k, v))
-		//	}
 		resp.WriteString("---------\n")
 		resp.WriteString(fmt.Sprintf("The Body is %q\n", r.Body))
 		fmt.Fprintf(w, resp.String())
 		log.Printf(resp.String())
-	})
+	}
 
+	finalHandler := http.HandlerFunc(devnuller)
+	router.Handle("/", Tracing(finalHandler))
 	return router
 }
 
