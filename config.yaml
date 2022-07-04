@@ -1,0 +1,14 @@
+# Server config
+server:
+  host: 0.0.0.0
+  port: 8080
+  timeout:
+    server: 30
+    read: 15
+    write: 10
+    idle: 5
+graylog:
+  host: localhost
+  port: 12201
+zipkin:
+  url: http://localhost:9411/api/v2/spans"
