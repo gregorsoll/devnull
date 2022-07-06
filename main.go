@@ -120,22 +120,25 @@ func ParseFlags() (string, error) {
 }
 func Tracing(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		traceID, _ := trace.TraceIDFromHex(r.Header["X-B3-Traceid"][0])
-		spanID, _ := trace.SpanIDFromHex(r.Header["X-B3-Spanid"][0])
-		var traceFlags trace.TraceFlags
-		if r.Header["X-B3-Sampled"][0] == "1" {
-			traceFlags = trace.FlagsSampled
+		if r.Header["X-B3-Traceid"] != nil && r.Header["X-B3-Spanid"] != nil && r.Header["X-B3-Sampled"] != nil {
+
+			traceID, _ := trace.TraceIDFromHex(r.Header["X-B3-Traceid"][0])
+			spanID, _ := trace.SpanIDFromHex(r.Header["X-B3-Spanid"][0])
+			var traceFlags trace.TraceFlags
+			if r.Header["X-B3-Sampled"][0] == "1" {
+				traceFlags = trace.FlagsSampled
+			}
+
+			spanContext := trace.NewSpanContext(trace.SpanContextConfig{
+				TraceID:    traceID,
+				SpanID:     spanID,
+				TraceFlags: traceFlags,
+			})
+
+			ctx := trace.ContextWithSpanContext(r.Context(), spanContext)
+
+			r = r.WithContext(ctx)
 		}
-
-		spanContext := trace.NewSpanContext(trace.SpanContextConfig{
-			TraceID:    traceID,
-			SpanID:     spanID,
-			TraceFlags: traceFlags,
-		})
-
-		ctx := trace.ContextWithSpanContext(r.Context(), spanContext)
-
-		r = r.WithContext(ctx)
 		next.ServeHTTP(w, r)
 	})
 }
@@ -190,6 +193,7 @@ func NewRouter(hostname string) *http.ServeMux {
 
 	finalHandler := http.HandlerFunc(devnuller)
 	router.Handle("/", Tracing(finalHandler))
+
 	return router
 }
 
@@ -200,6 +204,7 @@ func (config Config) Run() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	// Set up a channel to listen to for interrupt signals
 	var runChan = make(chan os.Signal, 1)
 

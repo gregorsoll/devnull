@@ -3,7 +3,7 @@ WORKDIR /src
 COPY . .
 RUN go mod download && go build -o /out/devnull .
 FROM alpine:3.15 AS bin
-COPY --from=build /out/devnul /app/
+COPY --from=build /out/devnull /app/
 COPY --from=build /src/config.yaml /app/
 WORKDIR /app
 
