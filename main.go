@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -186,10 +187,11 @@ func NewRouter(hostname string) *http.ServeMux {
 		}
 
 		resp.WriteString("---------\n")
-		if r.Body == nil {
-			resp.WriteString(fmt.Sprintf("There's no body"))
+		body, err := ioutil.ReadAll(io.LimitReader(r.Body, 100))
+		if err != nil {
+			resp.WriteString("Don't know what body is there ... some problems")
 		} else {
-			resp.WriteString(fmt.Sprintf("The Body is %q\n", r.Body))
+			resp.WriteString(fmt.Sprintf("The Body is %q\n", string(body)))
 		}
 		fmt.Fprintf(w, resp.String())
 		log.Printf(resp.String())
