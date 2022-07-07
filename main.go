@@ -186,7 +186,11 @@ func NewRouter(hostname string) *http.ServeMux {
 		}
 
 		resp.WriteString("---------\n")
-		resp.WriteString(fmt.Sprintf("The Body is %q\n", r.Body))
+		if r.Body == nil {
+			resp.WriteString(fmt.Sprintf("There's no body"))
+		} else {
+			resp.WriteString(fmt.Sprintf("The Body is %q\n", r.Body))
+		}
 		fmt.Fprintf(w, resp.String())
 		log.Printf(resp.String())
 	}
